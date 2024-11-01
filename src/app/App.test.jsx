@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { expect, test } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-import App from '.'
+import App from './App.svelte'
 
 test('renders without crashing', () => {
   render(<Suspense fallback="loading"><App /></Suspense>)
