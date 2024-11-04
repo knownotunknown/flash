@@ -25,15 +25,14 @@ export const Error = {
   UNRECOGNIZED_DEVICE: 1,
   LOST_CONNECTION: 2,
   DOWNLOAD_FAILED: 3,
-  UNPACK_FAILED: 4,
-  CHECKSUM_MISMATCH: 5,
-  FLASH_FAILED: 6,
-  ERASE_FAILED: 7,
-  REQUIREMENTS_NOT_MET: 8,
+  CHECKSUM_MISMATCH: 4,
+  FLASH_FAILED: 5,
+  ERASE_FAILED: 6,
+  REQUIREMENTS_NOT_MET: 7,
 } as const satisfies Record<string, number>;
 
 export type StepValue = (typeof Step)[keyof typeof Step];
-export type ErrorValue = (typeof Step)[keyof typeof Step];
+export type ErrorValue = (typeof Error)[keyof typeof Error];
 
 interface ImageWorker {
   init(): Promise<void>;
@@ -48,10 +47,10 @@ interface ManifestImage {
 }
 
 interface QdlStore {
-  step: { subscribe: Writable<StepType>['subscribe'] };
+  step: { subscribe: Writable<StepValue>['subscribe'] };
   message: { subscribe: Writable<string>['subscribe'] };
   progress: { subscribe: Writable<number>['subscribe'] };
-  error: { subscribe: Writable<ErrorType>['subscribe'] };
+  error: { subscribe: Writable<ErrorValue>['subscribe'] };
   connected: { subscribe: Writable<boolean>['subscribe'] };
   serial: { subscribe: Writable<string | null>['subscribe'] };
   onContinue: { subscribe: Writable<(() => void) | null>['subscribe'] };
@@ -83,10 +82,10 @@ function isRecognizedDevice(slotCount: number, partitions: string[]): boolean {
 }
 
 function createQdlStore(): QdlStore {
-  const step = writable<StepType>(Step.INITIALIZING);
+  const step = writable<StepValue>(Step.INITIALIZING);
   const message = writable<string>('');
   const progress = writable<number>(0);
-  const error = writable<ErrorType>(Error.NONE);
+  const error = writable<ErrorValue>(Error.NONE);
   const connected = writable<boolean>(false);
   const serial = writable<string | null>(null);
   const onContinue = writable<(() => void) | null>(null);
@@ -104,7 +103,7 @@ function createQdlStore(): QdlStore {
   async function initialize(worker: ImageWorker): Promise<void> {
     imageWorker = worker;
     
-    if (typeof navigator.usb === 'undefined' || 
+    if (typeof (navigator as any).usb === 'undefined' || 
         typeof Worker === 'undefined' || 
         typeof Storage === 'undefined') {
       error.set(Error.REQUIREMENTS_NOT_MET);
