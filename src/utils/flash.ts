@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, Writable } from 'svelte/store';
 import { concatUint8Array } from '@/QDL/utils';
 import { qdlDevice } from '@/QDL/qdl';
 import * as Comlink from 'comlink';
@@ -9,15 +9,15 @@ import { createManifest } from '@/utils/manifest';
 import { withProgress } from '@/utils/progress';
 
 export const Step = {
-  INITIALIZING: 0,
-  READY: 1,
-  CONNECTING: 2,
-  DOWNLOADING: 3,
-  UNPACKING: 4,
-  FLASHING: 6,
-  ERASING: 7,
-  DONE: 8,
-};
+  'INITIALIZING': 0,
+  'READY': 1,
+  'CONNECTING': 2,
+  'DOWNLOADING': 3,
+  'UNPACKING': 4,
+  'FLASHING': 6,
+  'ERASING': 7,
+  'DONE': 8,
+} as const satisfies Record<string, number>;
 
 export const Error = {
   UNKNOWN: -1,
@@ -30,9 +30,37 @@ export const Error = {
   FLASH_FAILED: 6,
   ERASE_FAILED: 7,
   REQUIREMENTS_NOT_MET: 8,
-};
+} as const satisfies Record<string, number>;
 
-function isRecognizedDevice(slotCount, partitions) {
+export type StepValue = (typeof Step)[keyof typeof Step];
+export type ErrorValue = (typeof Step)[keyof typeof Step];
+
+interface ImageWorker {
+  init(): Promise<void>;
+  downloadImage(image: ManifestImage, onProgress: (progress: number) => void): Promise<void>;
+  unpackImage(image: ManifestImage, onProgress: (progress: number) => void): Promise<void>;
+  getImage(image: ManifestImage): Promise<FileSystemFileHandle>;
+}
+
+interface ManifestImage {
+  name: string;
+  // Add other properties as needed
+}
+
+interface QdlStore {
+  step: { subscribe: Writable<StepType>['subscribe'] };
+  message: { subscribe: Writable<string>['subscribe'] };
+  progress: { subscribe: Writable<number>['subscribe'] };
+  error: { subscribe: Writable<ErrorType>['subscribe'] };
+  connected: { subscribe: Writable<boolean>['subscribe'] };
+  serial: { subscribe: Writable<string | null>['subscribe'] };
+  onContinue: { subscribe: Writable<(() => void) | null>['subscribe'] };
+  onRetry: { subscribe: Writable<(() => void) | null>['subscribe'] };
+  initialize: (worker: ImageWorker) => Promise<void>;
+  startFlashing: () => Promise<void>;
+}
+
+function isRecognizedDevice(slotCount: number, partitions: string[]): boolean {
   if (slotCount !== 2) {
     console.error('[QDL] Unrecognised device (slotCount)');
     return false;
@@ -54,26 +82,26 @@ function isRecognizedDevice(slotCount, partitions) {
   return true;
 }
 
-function createQdlStore() {
-  const step = writable(Step.INITIALIZING);
-  const message = writable('');
-  const progress = writable(0);
-  const error = writable(Error.NONE);
-  const connected = writable(false);
-  const serial = writable(null);
-  const onContinue = writable(null);
-  const onRetry = writable(null);
+function createQdlStore(): QdlStore {
+  const step = writable<StepType>(Step.INITIALIZING);
+  const message = writable<string>('');
+  const progress = writable<number>(0);
+  const error = writable<ErrorType>(Error.NONE);
+  const connected = writable<boolean>(false);
+  const serial = writable<string | null>(null);
+  const onContinue = writable<(() => void) | null>(null);
+  const onRetry = writable<(() => void) | null>(null);
 
   const qdl = new qdlDevice();
-  let manifest = null;
-  let imageWorker = null;
+  let manifest: ManifestImage[] = [];
+  let imageWorker: ImageWorker | null = null;
 
-  function setMessage(msg = '') {
+  function setMessage(msg: string = ''): void {
     if (msg) console.info('[QDL]', msg);
     message.set(msg);
   }
 
-  async function initialize(worker) {
+  async function initialize(worker: ImageWorker): Promise<void> {
     imageWorker = worker;
     
     if (typeof navigator.usb === 'undefined' || 
@@ -101,7 +129,7 @@ function createQdlStore() {
     }
   }
 
-  async function startFlashing() {
+  async function startFlashing(): Promise<void> {
     step.set(Step.CONNECTING);
     try {
       await qdl.waitForConnect();
@@ -131,7 +159,8 @@ function createQdlStore() {
     }
   }
 
-  async function downloadImages() {
+  async function downloadImages(): Promise<void> {
+    if (!imageWorker) throw new Error('ImageWorker not initialized');
     progress.set(0);
     try {
       for await (const [image, onProgress] of withProgress(manifest, progress.set)) {
@@ -146,7 +175,8 @@ function createQdlStore() {
     }
   }
 
-  async function unpackImages() {
+  async function unpackImages(): Promise<void> {
+    if (!imageWorker) throw new Error('ImageWorker not initialized');
     progress.set(0);
     try {
       for await (const [image, onProgress] of withProgress(manifest, progress.set)) {
@@ -157,11 +187,12 @@ function createQdlStore() {
       step.set(Step.FLASHING);
     } catch (err) {
       console.error('[QDL] Unpack error', err);
-      throw err.startsWith('Checksum mismatch') ? Error.CHECKSUM_MISMATCH : Error.UNPACK_FAILED;
+      throw (err as string).startsWith('Checksum mismatch') ? Error.CHECKSUM_MISMATCH : Error.UNPACK_FAILED;
     }
   }
 
-  async function flashDevice() {
+  async function flashDevice(): Promise<void> {
+    if (!imageWorker) throw new Error('ImageWorker not initialized');
     progress.set(0);
     try {
       const currentSlot = await qdl.getActiveSlot();
@@ -170,14 +201,14 @@ function createQdlStore() {
       }
       const otherSlot = currentSlot === 'a' ? 'b' : 'a';
 
-      await qdl.erase("xbl"+`_${currentSlot}`);
+      await qdl.erase(`xbl_${currentSlot}`);
 
       for await (const [image, onProgress] of withProgress(manifest, progress.set)) {
         const fileHandle = await imageWorker.getImage(image);
         const blob = await fileHandle.getFile();
 
         setMessage(`Flashing ${image.name}`);
-        const partitionName = image.name + `_${otherSlot}`;
+        const partitionName = `${image.name}_${otherSlot}`;
         await qdl.flashBlob(partitionName, blob, onProgress);
       }
 
@@ -189,7 +220,7 @@ function createQdlStore() {
     }
   }
 
-  async function eraseDevice() {
+  async function eraseDevice(): Promise<void> {
     progress.set(0);
     try {
       setMessage('Erasing userdata');
@@ -208,9 +239,9 @@ function createQdlStore() {
     }
   }
 
-  function handleError(err) {
-    const errorCode = err.code || err;
-    error.set(errorCode);
+  function handleError(err: unknown): void {
+    const errorCode = (err as { code?: ErrorType }).code || err;
+    error.set(errorCode as ErrorType);
     progress.set(-1);
     onContinue.set(null);
     onRetry.set(() => () => window.location.reload());
@@ -231,4 +262,4 @@ function createQdlStore() {
 }
 
 export const qdlStore = createQdlStore();
-export const useQdl = () => qdlStore;
+export const useQdl = (): QdlStore => qdlStore;
