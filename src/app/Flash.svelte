@@ -17,8 +17,8 @@
 
   type UiState = {
     status: string;
-    icon?: string;
-    bgColor?: string;
+    bgColor: string;
+    icon: string;
     iconStyle?: string;
     description?: string;
   }
@@ -73,7 +73,7 @@
     },
   };
 
-  const errors: Partial<Record<ErrorValue, UiState>> = {
+  const errors: Record<ErrorValue, UiState> = {
     [Error.UNKNOWN]: {
       status: 'Unknown error',
       description:
