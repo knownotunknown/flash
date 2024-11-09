@@ -1,7 +1,6 @@
-<script lang="ts">
+<script>
   import { onMount, onDestroy } from 'svelte';
   import { Step, Error, useQdl } from '@/utils/flash';
-  import type { StepValue, ErrorValue } from '@/utils/flash';
 
   import bolt from '@/assets/bolt.svg';
   import cable from '@/assets/cable.svg';
@@ -15,15 +14,7 @@
   import frameAlert from '@/assets/frame_alert.svg';
   import systemUpdate from '@/assets/system_update_c3.svg';
 
-  type UiState = {
-    status: string;
-    bgColor: string;
-    icon: string;
-    iconStyle?: string;
-    description?: string;
-  }
-
-  const steps: Record<StepValue, UiState> = {
+  const steps = {
     [Step.INITIALIZING]: {
       status: 'Initializing...',
       bgColor: 'bg-gray-400 dark:bg-gray-700',
@@ -65,19 +56,19 @@
     },
     [Step.DONE]: {
       status: 'Done',
-      description:
-        'Your device has been updated successfully. You can now unplug the cables from your device. ' +
-        'To complete the system reset, follow the instructions on your device.',
+      description: 'Your device has been updated successfully. You can now unplug the all cables from your device, ' +
+                   'and wait for the light to stop blinking then plug the power cord in again. ' +
+                   'To complete the system reset, follow the instructions on your device.',
       bgColor: 'bg-green-500',
       icon: done,
     },
   };
 
-  const errors: Record<ErrorValue, UiState> = {
+  const errors = {
     [Error.UNKNOWN]: {
       status: 'Unknown error',
-      description:
-        'An unknown error has occurred. Unplug your device and wait for 20s. Restart your browser and try again.',
+      description: 'An unknown error has occurred. Unplug your device and wait for 20s. ' +
+                  'Restart your browser and try again.',
       bgColor: 'bg-red-500',
       icon: exclamation,
     },
@@ -89,14 +80,14 @@
     },
     [Error.LOST_CONNECTION]: {
       status: 'Lost connection',
-      description:
-        'The connection to your device was lost. Check that your cables are connected properly and try again.',
+      description: 'The connection to your device was lost. Check that your cables are connected properly and try again. ' +
+                  'Unplug your device and wait for around 20s.',
       icon: cable,
     },
     [Error.DOWNLOAD_FAILED]: {
       status: 'Download failed',
-      description:
-        'The system image could not be downloaded. Unplug your device and wait for 20s. Check your internet connection and try again.',
+      description: 'The system image could not be downloaded. Unplug your device and wait for 20s. ' +
+                  'Check your internet connection and try again.',
       icon: cloudError,
     },
     [Error.CHECKSUM_MISMATCH]: {
@@ -106,32 +97,32 @@
     },
     [Error.FLASH_FAILED]: {
       status: 'Flash failed',
-      description:
-        'The system image could not be flashed to your device. Try using a different cable, USB port, or computer.',
+      description: 'The system image could not be flashed to your device. Try using a different cable, USB port, or ' +
+        'computer. If the problem persists, join the #hw-three-3x channel on Discord for help.',
       icon: deviceExclamation,
     },
     [Error.ERASE_FAILED]: {
       status: 'Erase failed',
-      description:
-        'The device could not be erased. Try using a different cable, USB port, or computer.',
+      description: 'The device could not be erased. Try using a different cable, USB port, or computer. If the problem ' +
+        'persists, join the #hw-three-3x channel on Discord for help.',
       icon: deviceExclamation,
     },
     [Error.REQUIREMENTS_NOT_MET]: {
       status: 'Requirements not met',
-      description:
-        'Your system does not meet the requirements to flash your device. Make sure to use a browser which supports WebUSB and is up to date.',
+      description: 'Your system does not meet the requirements to flash your device. Make sure to use a browser which ' +
+        'supports WebUSB and is up to date.',
     },
   };
 
-  const detachScript: string[] = [
+  const detachScript = [
     "for d in /sys/bus/usb/drivers/qcserial/*-*; do [ -e \"$d\" ] && echo -n \"$(basename $d)\" | sudo tee /sys/bus/usb/drivers/qcserial/unbind > /dev/null; done"
   ];
 
-  const isLinux: boolean = navigator.userAgent.toLowerCase().includes('linux');
-  let copied: boolean = false;
+  const isLinux = navigator.userAgent.toLowerCase().includes('linux');
+  let copied = false;
 
   const qdl = useQdl();
-
+  
   $: step = $qdl.step;
   $: message = $qdl.message;
   $: progress = $qdl.progress;
@@ -140,26 +131,26 @@
   $: serial = $qdl.serial;
   $: onContinue = $qdl.onContinue;
   $: onRetry = $qdl.onRetry;
-
+  
   $: uiState = steps[step];
   $: if (error) {
     uiState = { ...steps[step], ...errors[Error.UNKNOWN], ...errors[error] };
   }
   $: ({ status, description, bgColor, icon, iconStyle = 'invert' } = uiState);
 
-  $: title = message && !error
+  $: title = message && !error 
     ? `${message}...${progress >= 0 ? ` (${(progress * 100).toFixed(0)}%)` : ''}`
     : status;
 
-  function handleContinue(): void {
+  function handleContinue() {
     if (onContinue) onContinue();
   }
 
-  function handleRetry(): void {
+  function handleRetry() {
     if (onRetry) onRetry();
   }
 
-  function handleCopy(): void {
+  function handleCopy() {
     navigator.clipboard.writeText(detachScript.join('\n'));
     copied = true;
     setTimeout(() => {
@@ -167,7 +158,7 @@
     }, 1000);
   }
 
-  function beforeUnloadListener(event: BeforeUnloadEvent): string {
+  function beforeUnloadListener(event) {
     event.preventDefault();
     return (event.returnValue = "Flash in progress. Are you sure you want to leave?");
   }
